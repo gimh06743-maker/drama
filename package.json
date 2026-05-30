@@ -1,0 +1,17 @@
+{
+  "name": "drawmafia",
+  "version": "1.0.0",
+  "description": "그림으로 마피아를 찾는 실시간 멀티플레이어 게임",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "firebase-admin": "^12.0.0",
+    "socket.io": "^4.7.2"
+  }
+}
