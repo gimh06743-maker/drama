@@ -77,6 +77,9 @@ const io = new Server(server, {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const STROKES_PER_PLAYER = 3; // 1인당 획 수
 
