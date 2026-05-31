@@ -213,9 +213,9 @@
   #turn-label { font-size: 13px; color: var(--text); font-weight: 600; }
   #timer-display {
     margin-left: auto;
-    font-size: 13px; color: var(--text2);
+    font-size: 20px; font-weight: 700; color: var(--text);
   }
-  #timer-display.urgent { color: var(--red); font-weight: 700; }
+  #timer-display.urgent { color: var(--red); font-weight: 800; }
 
   #canvas-wrap {
     position: relative;
@@ -241,15 +241,15 @@
     border: 1px solid var(--border);
     border-bottom: none;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    padding: 10px 14px;
-    display: flex; align-items: center; gap: 10px;
+    padding: 16px 20px;
+    display: flex; align-items: center; gap: 12px;
     transition: background 0.2s;
   }
   .game-topbar.my-turn {
     background: var(--accent-bg);
     border-color: rgba(124,106,247,0.3);
   }
-  #turn-label { font-size: 14px; color: var(--text); font-weight: 700; }
+  #turn-label { font-size: 19px; color: var(--text); font-weight: 700; }
   .drawing-dots {
     display: flex; gap: 4px; align-items: center;
   }
