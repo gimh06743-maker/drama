@@ -224,6 +224,15 @@
     border-right: 1px solid var(--border);
     cursor: crosshair;
     touch-action: none;
+    transition: box-shadow 0.3s ease;
+  }
+  #canvas-wrap.my-turn-glow {
+    box-shadow: inset 0 0 0 3px var(--green), 0 0 16px rgba(93,191,122,0.6);
+    animation: glow-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: inset 0 0 0 3px var(--green), 0 0 12px rgba(93,191,122,0.45); }
+    50% { box-shadow: inset 0 0 0 3px var(--green), 0 0 22px rgba(93,191,122,0.8); }
   }
   #canvas { display: block; }
 
@@ -976,17 +985,20 @@ function updateTurnUI() {
   const label = document.getElementById('turn-label');
   const topbar = document.getElementById('game-topbar');
   const dots = document.getElementById('drawing-dots');
+  const canvasWrap = document.getElementById('canvas-wrap');
 
   if (myTurn) {
     label.textContent = '✏️ 내 차례! 지금 그려주세요';
     label.style.color = 'var(--accent2)';
     topbar.classList.add('my-turn');
     dots.style.display = 'none';
+    canvasWrap.classList.add('my-turn-glow');
   } else {
     label.textContent = `${currentPlayer?.name || '?'} 그리는 중...`;
     label.style.color = 'var(--text)';
     topbar.classList.remove('my-turn');
     dots.style.display = 'flex';
+    canvasWrap.classList.remove('my-turn-glow');
   }
 
   // player list
