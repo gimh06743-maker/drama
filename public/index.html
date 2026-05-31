@@ -527,6 +527,17 @@
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  #reconnect-banner {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: var(--amber); color: #1a1a1a;
+    text-align: center; padding: 10px;
+    font-size: 14px; font-weight: 700;
+    z-index: 2000;
+    transform: translateY(-100%);
+    transition: transform 0.3s ease;
+  }
+  #reconnect-banner.show { transform: translateY(0); }
+
   @media (max-width: 700px) {
     #screen-game { flex-direction: column !important; }
     .game-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; }
@@ -695,7 +706,13 @@
 // ══════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000
+});
 const state = {
   roomId: null,
   playerId: null,
@@ -706,7 +723,8 @@ const state = {
   isMafia: false,
   turnOrder: [],
   currentPlayerId: null,
-  hasVoted: false
+  hasVoted: false,
+  wasConnected: false
 };
 
 // Canvas state
@@ -1129,6 +1147,76 @@ document.getElementById('btn-start-vote').addEventListener('click', () => {
 // ══════════════════════════════════════════
 //  SOCKET EVENTS
 // ══════════════════════════════════════════
+
+// 연결 상태 관리 (자동 재연결)
+socket.on('connect', () => {
+  // 이전에 연결된 적이 있고, 방에 있었다면 → 재연결 시도
+  if (state.wasConnected && state.roomId && state.myName) {
+    socket.emit('rejoin_room', { roomId: state.roomId, name: state.myName, oldPlayerId: state.playerId });
+    showToast('🔄 다시 연결됐어요!');
+  }
+  state.wasConnected = true;
+  hideConnectionBanner();
+});
+
+socket.on('disconnect', (reason) => {
+  // 게임 중에 끊겼으면 배너 표시
+  if (state.roomId) {
+    showConnectionBanner();
+  }
+});
+
+socket.io.on('reconnect_attempt', () => {
+  if (state.roomId) showConnectionBanner();
+});
+
+function showConnectionBanner() {
+  let banner = document.getElementById('reconnect-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'reconnect-banner';
+    banner.innerHTML = '🔄 연결이 끊겼어요. 다시 연결하는 중...';
+    document.body.appendChild(banner);
+  }
+  banner.classList.add('show');
+}
+
+function hideConnectionBanner() {
+  const banner = document.getElementById('reconnect-banner');
+  if (banner) banner.classList.remove('show');
+}
+
+socket.on('rejoin_success', (data) => {
+  state.playerId = data.playerId;
+  state.players = data.players;
+  state.roomId = data.roomId;
+  hideConnectionBanner();
+
+  // 게임 중이면 게임 화면 상태 복구
+  if (data.phase === 'playing') {
+    state.myWord = data.word;
+    state.isMafia = data.isMafia;
+    state.turnOrder = data.turnOrder;
+    state.currentPlayerId = data.currentPlayerId;
+    allStrokes = data.strokes || [];
+    showScreen('screen-game');
+    setTimeout(() => { resizeCanvas(); redrawAll(); }, 50);
+    document.getElementById('my-word').textContent = data.word;
+    updateStrokeProgress(data.strokeCount || 0, data.totalStrokes || 0);
+    updateTurnUI();
+  } else if (data.phase === 'voting') {
+    state.hasVoted = false;
+    showScreen('screen-vote');
+    renderVoteScreen(data.players, {});
+  }
+});
+
+socket.on('rejoin_failed', () => {
+  // 방이 사라졌으면 로비로
+  showToast('방을 찾을 수 없어요. 로비로 돌아갑니다.');
+  setTimeout(() => location.reload(), 1500);
+});
+
 socket.on('room_created', ({ roomId, playerId, players }) => {
   state.roomId = roomId;
   state.playerId = playerId;

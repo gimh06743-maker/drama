@@ -77,9 +77,6 @@ const io = new Server(server, {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
 
 const STROKES_PER_PLAYER = 3; // 1인당 획 수
 
@@ -211,7 +208,8 @@ io.on('connection', (socket) => {
       strokeCount: 0,
       strokes: [],
       votes: {},
-      roundTimer: null
+      roundTimer: null,
+      pendingRemovals: {}
     };
 
     await saveRoom(code, rooms[code]);
@@ -350,26 +348,109 @@ io.on('connection', (socket) => {
     });
   });
 
+  // 재연결: 끊겼던 플레이어가 같은 방으로 복귀
+  socket.on('rejoin_room', async ({ roomId, name, oldPlayerId }) => {
+    let room = rooms[roomId];
+
+    // 메모리에 없으면 Firebase에서 복원 시도
+    if (!room) {
+      const saved = await loadRoom(roomId);
+      if (!saved) return socket.emit('rejoin_failed', {});
+      // 대기 상태만 복원 가능 (게임 중 상태는 메모리에만 있음)
+      rooms[roomId] = {
+        players: saved.players,
+        phase: saved.phase,
+        citizenWord: null, mafiaWord: null, mafiaId: null,
+        turnOrder: [], currentTurnIndex: 0,
+        strokeCount: 0, strokes: [], votes: {},
+        roundTimer: null, pendingRemovals: {}
+      };
+      room = rooms[roomId];
+    }
+
+    // 끊긴 자리(유예 중)가 있으면 그걸로 복구
+    const pending = room.pendingRemovals && room.pendingRemovals[oldPlayerId];
+    if (pending) {
+      clearTimeout(pending.timer);
+      delete room.pendingRemovals[oldPlayerId];
+    }
+
+    // 기존 플레이어 객체 찾기 (oldPlayerId 기준)
+    let player = room.players.find(p => p.id === oldPlayerId);
+    if (player) {
+      // socket id 갱신
+      player.id = socket.id;
+    } else {
+      // 못 찾으면 새로 추가 (대기 중일 때만)
+      if (room.phase !== 'waiting' && room.players.length >= 8) {
+        return socket.emit('rejoin_failed', {});
+      }
+      player = { id: socket.id, name, isHost: room.players.length === 0 };
+      room.players.push(player);
+    }
+
+    // turnOrder에서도 id 갱신
+    if (room.turnOrder && oldPlayerId) {
+      const idx = room.turnOrder.indexOf(oldPlayerId);
+      if (idx !== -1) room.turnOrder[idx] = socket.id;
+    }
+    if (room.mafiaId === oldPlayerId) room.mafiaId = socket.id;
+
+    socket.join(roomId);
+    socket.roomId = roomId;
+
+    const totalStrokes = getTotalStrokes(room);
+    const currentPlayerId = room.turnOrder[room.currentTurnIndex];
+
+    socket.emit('rejoin_success', {
+      roomId,
+      playerId: socket.id,
+      players: room.players,
+      phase: room.phase,
+      word: player.id === room.mafiaId ? room.mafiaWord : room.citizenWord,
+      isMafia: player.id === room.mafiaId,
+      turnOrder: room.turnOrder,
+      currentPlayerId,
+      strokes: room.strokes,
+      strokeCount: room.strokeCount,
+      totalStrokes
+    });
+
+    // 다른 사람들에게 갱신된 플레이어 목록 알림
+    io.to(roomId).emit('player_joined', { players: room.players });
+    await saveRoom(roomId, room);
+  });
+
   socket.on('disconnect', async () => {
     const roomId = socket.roomId;
     if (!roomId || !rooms[roomId]) return;
     const room = rooms[roomId];
 
-    room.players = room.players.filter(p => p.id !== socket.id);
+    // 바로 지우지 않고 15초 유예 — 그 안에 재연결하면 복구
+    if (!room.pendingRemovals) room.pendingRemovals = {};
+    const leavingId = socket.id;
 
-    if (room.players.length === 0) {
-      clearTimer(roomId);
-      delete rooms[roomId];
-      await deleteRoom(roomId);
-      return;
-    }
+    const timer = setTimeout(async () => {
+      // 유예 시간 안에 안 돌아왔으면 진짜 제거
+      if (!rooms[roomId]) return;
+      const r = rooms[roomId];
+      r.players = r.players.filter(p => p.id !== leavingId);
+      delete r.pendingRemovals[leavingId];
 
-    if (!room.players.find(p => p.isHost)) {
-      room.players[0].isHost = true;
-    }
+      if (r.players.length === 0) {
+        clearTimer(roomId);
+        delete rooms[roomId];
+        await deleteRoom(roomId);
+        return;
+      }
+      if (!r.players.find(p => p.isHost)) {
+        r.players[0].isHost = true;
+      }
+      await saveRoom(roomId, r);
+      io.to(roomId).emit('player_left', { players: r.players, leftId: leavingId });
+    }, 15000);
 
-    await saveRoom(roomId, room);
-    io.to(roomId).emit('player_left', { players: room.players, leftId: socket.id });
+    room.pendingRemovals[leavingId] = { timer, name: socket.id };
   });
 });
 
